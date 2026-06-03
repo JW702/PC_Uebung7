@@ -1,0 +1,16 @@
+- masse auf 1 gesetzt
+- nah abstoßung prop. zu 1/r^5 (Dipolabstoßung)
+
+Aktueller Bottleneck ist das rendern der frames (memory)
+ffmpeg hilft da aus (Command von KI, aber funktioniert)
+
+-QuadTree für Barnes Hutt
+- Simulation funnktioniert, aber heftiger memory leak -> Grund: Rekursion bei QTree Kraftberechnung, weitergeben von direkten vektoren anstatt von pointern haben die leaks behoben
+- Segfault für große timesteps -> Weit entfernete Particles werden komplett ignoriert 
+
+- frames in eigenen Ordner speichern, da sonst der filemanager in Flammen aufgeht
+
+- RK4 -> großer Segfault 
+- boundary check für Kraftberechnung -> kleine Verbesserung (erstmal verworfen)
+
+- OpenMP: 
