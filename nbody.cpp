@@ -13,6 +13,8 @@ static double repulsion = 0.0000005;
 static double theta = 0.5;
 static double L = 1;
 
+static int global_num_particles = 0;
+
 // Define a particle in 2D with a certain mass,
 // a position (xpos,ypos) for each coordinate and
 // two velocity components (xvel,yvel)
@@ -69,9 +71,10 @@ struct QuadTree {
     num_particles = n;
     particles = p;
     // if 1 or less particles are in the node, do not subdivide further
-    if(n <= 1 || depth < 2*log2(n)){
+    if(n <= 1 || depth > 2*log2(global_num_particles)){
       return;
     }
+
 
     int n_ne = 0;
     int n_nw = 0;
@@ -252,6 +255,7 @@ int main(int argc, char **argv) {
   // Read input arguments from console
   if (argc > 2) {
     n = atoi(argv[1]);
+    global_num_particles = n;
     nt = atoi(argv[2]);
     if (argc > 3) {
       dt = atof(argv[3]);
@@ -326,11 +330,28 @@ int main(int argc, char **argv) {
     // computed velocities
     for (int i = 0; i < n; i++) {
       // if the particle is far out, just ignore it
-      if (p[i]->xpos >= 1.5*L || p[i]->xpos <= -1.5*L || p[i]->ypos >= 1.5*L || p[i]->ypos <= -1.5*L){
-        continue;
-      }
+      double outsite_factor = 1;
+      double bounce_scale = .1;
+      double reflection_scale = 0.001;
       p[i]->xpos += dt * p[i]->xvel;
       p[i]->ypos += dt * p[i]->yvel;
+      if (p[i]->xpos > outsite_factor*L/2 || p[i]->xpos < -outsite_factor*L/2){
+        //continue;
+        p[i]->xvel *= -bounce_scale;
+        if (p[i] -> xpos > 0) {
+          p[i]->xpos = L/2 - (L*reflection_scale);
+        }else {
+          p[i]->xpos = -L/2 + (L*reflection_scale);
+        }
+      }
+      if (p[i]->ypos > outsite_factor*L/2 || p[i]->ypos < -outsite_factor*L/2) {
+        p[i]->yvel *= -bounce_scale;
+        if (p[i] -> ypos > 0) {
+          p[i]->ypos = L/2 - (L*reflection_scale);
+        }else {
+          p[i]->ypos = -L/2 + (L*reflection_scale);
+        }
+      }
     }
 
     // Save particles as a vector graphic in svg format
