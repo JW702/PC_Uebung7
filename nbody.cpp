@@ -307,7 +307,7 @@ int main(int argc, char **argv) {
 
     // This part sucks
     starttime = omp_get_wtime();
-#pragma omp parallel for shared(p) num_threads(8)
+#pragma omp parallel for shared(p) num_threads(1)
     for (int i = 0; i < n; i++){
       vector2D F;
       // RK4? beacause Euler only converges in O(dt^2) and not O(dt^4) now just midpoint which is O(dt^3)
