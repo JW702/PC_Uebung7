@@ -1,5 +1,3 @@
-// Use "convert -delay 1 -loop 0 *.svg result.gif" to generate an animated gif
-// from svg-files
 #include <math.h>
 #include <stdio.h>
 #include <time.h>
@@ -12,8 +10,6 @@ static double grav_const = 6.67430;
 static double repulsion = 0.0000005;
 static double theta = 0.5;
 static double L = 1;
-
-static int global_num_particles = 0;
 
 // Define a particle in 2D with a certain mass,
 // a position (xpos,ypos) for each coordinate and
@@ -71,7 +67,8 @@ struct QuadTree {
     num_particles = n;
     particles = p;
     // if 1 or less particles are in the node, do not subdivide further
-    if(n <= 1 || depth > 2*log2(global_num_particles)){
+    // or if the particles are so close to each other, that they're already repelling
+    if(n <= 1 || l < 1e-4){
       return;
     }
 
@@ -190,7 +187,7 @@ vector2D ForceToQuadTree(double xPos, double yPos, QuadTree* QT){
     xdiff = xPos - QT->particles[0]->xpos;
     ydiff = yPos - QT->particles[0]->ypos;
     d = xdiff*xdiff + ydiff*ydiff;
-    if ((d > 1e-8)) {
+    if ((d > 1e-7)) {
       force = (grav_const * 1) / pow(d, 1.5) - repulsion / pow(d, 3);
       return  vector2D(-xdiff * force, -ydiff * force);
     }
@@ -201,13 +198,13 @@ vector2D ForceToQuadTree(double xPos, double yPos, QuadTree* QT){
   }
   else if (l*l <= d * theta*theta){
     // do the cluster stuff (calculate force)
-    if ((d > 1e-8)) {
+    if ((d > 1e-7)) {
       force = (grav_const * QT->num_particles) / pow(d, 1.5) - repulsion / pow(d, 3);
       return vector2D(-xdiff * force, -ydiff * force);
     }
   }
   else {
-    vector2D ForceNE, ForceNW, ForceSW, ForceSE, Force;
+    vector2D ForceNE, ForceNW, ForceSW, ForceSE;
     ForceNE = ForceToQuadTree(xPos, yPos, QT->ne);
     ForceNW = ForceToQuadTree(xPos, yPos, QT->nw);
     ForceSW = ForceToQuadTree(xPos, yPos, QT->sw);
@@ -255,7 +252,6 @@ int main(int argc, char **argv) {
   // Read input arguments from console
   if (argc > 2) {
     n = atoi(argv[1]);
-    global_num_particles = n;
     nt = atoi(argv[2]);
     if (argc > 3) {
       dt = atof(argv[3]);
@@ -298,29 +294,19 @@ int main(int argc, char **argv) {
     starttime = omp_get_wtime();
     // regenerating the QuadTree foreach timestep
     QuadTree *QTree = new QuadTree(0, 0, 2*L, p, n);
-  //  if (timestep % 100 == 0){
-    //  cout << " Generating the Tree for step " << timestep << " took: " << (omp_get_wtime() - starttime)*1e6 << "ns" << endl;
-    //}
-     
     
-    //
-
-    // This part sucks
     starttime = omp_get_wtime();
-#pragma omp parallel for shared(p) num_threads(1)
+  #pragma omp parallel for shared(p) num_threads(12)
     for (int i = 0; i < n; i++){
       vector2D F;
-      // RK4? beacause Euler only converges in O(dt^2) and not O(dt^4) now just midpoint which is O(dt^3)
+      // RK4 would be possible because Euler only converges in O(dt^2) and not O(dt^4) now just midpoint which is O(dt^3)
       {
         F = ForceToQuadTree(p[i]->xpos, p[i]->ypos, QTree);
       }
       p[i]->xvel += dt * F.x;
       p[i]->yvel += dt * F.y;
     }
-   // if (timestep % 100 == 0){
 
-     // cout << " Looping over the Tree for step " << timestep << " took: " << (omp_get_wtime() - starttime)*1e6 << "ns" <<endl;
-    //}
     time_average += (omp_get_wtime() - starttime)*1e6;
 
     // clearup space for the next Tree
@@ -330,22 +316,22 @@ int main(int argc, char **argv) {
     // computed velocities
     for (int i = 0; i < n; i++) {
       // if the particle is far out, just ignore it
-      double outsite_factor = 1;
-      double bounce_scale = .1;
+      double outside_factor = 1;
+      double restitution_factor = .5;
       double reflection_scale = 0.001;
       p[i]->xpos += dt * p[i]->xvel;
       p[i]->ypos += dt * p[i]->yvel;
-      if (p[i]->xpos > outsite_factor*L/2 || p[i]->xpos < -outsite_factor*L/2){
+      if (p[i]->xpos > outside_factor*L/2 || p[i]->xpos < -outside_factor*L/2){
         //continue;
-        p[i]->xvel *= -bounce_scale;
+        p[i]->xvel *= -restitution_factor;
         if (p[i] -> xpos > 0) {
           p[i]->xpos = L/2 - (L*reflection_scale);
         }else {
           p[i]->xpos = -L/2 + (L*reflection_scale);
         }
       }
-      if (p[i]->ypos > outsite_factor*L/2 || p[i]->ypos < -outsite_factor*L/2) {
-        p[i]->yvel *= -bounce_scale;
+      if (p[i]->ypos > outside_factor*L/2 || p[i]->ypos < -outside_factor*L/2) {
+        p[i]->yvel *= -restitution_factor;
         if (p[i] -> ypos > 0) {
           p[i]->ypos = L/2 - (L*reflection_scale);
         }else {
