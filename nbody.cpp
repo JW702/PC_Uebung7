@@ -62,14 +62,14 @@ struct QuadTree {
   QuadTree* se = nullptr;
 
   // contructor
-  QuadTree(double _xcenter, double _ycenter, double _l, Particle **p, int n){
+  QuadTree(double _xcenter, double _ycenter, double _l, Particle **p, int n, int depth = 0){
     xcenter = _xcenter;
     ycenter = _ycenter;
     l = _l;
     num_particles = n;
     particles = p;
     // if 1 or less particles are in the node, do not subdivide further
-    if(n <= 1){
+    if(n <= 1 || depth < 2*log2(n)){
       return;
     }
 
@@ -121,10 +121,10 @@ struct QuadTree {
 
     // the remaining points must be in SE
     n_se = n - k - n_sw;
-    ne = new QuadTree(xcenter + l/4, ycenter - l/4, l/2, p, n_ne);
-    nw = new QuadTree(xcenter - l/4, ycenter - l/4, l/2, p + n_ne, n_nw);
-    sw = new QuadTree(xcenter - l/4, ycenter + l/4, l/2, p + n_ne + n_nw, n_sw);
-    se = new QuadTree(xcenter + l/4, ycenter + l/4, l/2, p + n_ne + n_nw + n_sw, n_se);
+    ne = new QuadTree(xcenter + l/4, ycenter - l/4, l/2, p, n_ne ,depth + 1);
+    nw = new QuadTree(xcenter - l/4, ycenter - l/4, l/2, p + n_ne, n_nw, depth + 1);
+    sw = new QuadTree(xcenter - l/4, ycenter + l/4, l/2, p + n_ne + n_nw, n_sw, depth + 1);
+    se = new QuadTree(xcenter + l/4, ycenter + l/4, l/2, p + n_ne + n_nw + n_sw, n_se, depth + 1);
   }
 
   bool isLeaf() const {
@@ -286,20 +286,24 @@ int main(int argc, char **argv) {
   }
 
   // Iterate over time steps
+
+  int time_average = 0;
+
   for (int timestep = 0; timestep < nt; timestep++) {
 
     starttime = omp_get_wtime();
     // regenerating the QuadTree foreach timestep
     QuadTree *QTree = new QuadTree(0, 0, 2*L, p, n);
-    if (timestep % 100 == 0){
-      cout << " Generating the Tree for step " << timestep << " took: " << (omp_get_wtime() - starttime)*1e6 << "ns" << endl;
-    }
+  //  if (timestep % 100 == 0){
+    //  cout << " Generating the Tree for step " << timestep << " took: " << (omp_get_wtime() - starttime)*1e6 << "ns" << endl;
+    //}
      
     
-    // #pragma omp parallel for shared(p)
+    //
 
     // This part sucks
     starttime = omp_get_wtime();
+#pragma omp parallel for shared(p) num_threads(8)
     for (int i = 0; i < n; i++){
       vector2D F;
       // RK4? beacause Euler only converges in O(dt^2) and not O(dt^4) now just midpoint which is O(dt^3)
@@ -309,9 +313,11 @@ int main(int argc, char **argv) {
       p[i]->xvel += dt * F.x;
       p[i]->yvel += dt * F.y;
     }
-    if (timestep % 100 == 0){
-      cout << " Looping over the Tree for step " << timestep << " took: " << (omp_get_wtime() - starttime)*1e6 << "ns" <<endl; 
-    }
+   // if (timestep % 100 == 0){
+
+     // cout << " Looping over the Tree for step " << timestep << " took: " << (omp_get_wtime() - starttime)*1e6 << "ns" <<endl;
+    //}
+    time_average += (omp_get_wtime() - starttime)*1e6;
 
     // clearup space for the next Tree
     QTree->clear();
@@ -334,6 +340,7 @@ int main(int argc, char **argv) {
     // Some textual output for debugging
     // print2txt(p, n);
   }
+  cout << "Average Time to Loop Over Tree: " << time_average/nt <<"ns" << endl;
 
   // Remove particles
   for (int i = 0; i < n; i++) {
