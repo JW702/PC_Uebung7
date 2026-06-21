@@ -1,10 +1,12 @@
 // Use "convert -delay 1 -loop 0 *.svg result.gif" to generate an animated gif
 // from svg-files
+#include <cstring>
 #include <math.h>
 #include <stdio.h>
 #include <time.h>
 #include <omp.h>
 #include <iostream>
+#include <vector>
 
 using namespace std;
 
@@ -14,6 +16,15 @@ static double theta = 0.5;
 static double L = 1;
 
 static int global_num_particles = 0;
+static int max_force_calc_depth = 0;
+static int force_depth_average_global = 0;
+static int force_depth_average_temp = 0;
+static int force_depth_average_global_count = 0;
+static std::vector<int> anz_depth_nodes(15,0);
+static std::vector<int> anz_depth_nodes_temp(15,0);
+
+
+
 
 // Define a particle in 2D with a certain mass,
 // a position (xpos,ypos) for each coordinate and
@@ -124,6 +135,7 @@ struct QuadTree {
 
     // the remaining points must be in SE
     n_se = n - k - n_sw;
+
     ne = new QuadTree(xcenter + l/4, ycenter - l/4, l/2, p, n_ne ,depth + 1);
     nw = new QuadTree(xcenter - l/4, ycenter - l/4, l/2, p + n_ne, n_nw, depth + 1);
     sw = new QuadTree(xcenter - l/4, ycenter + l/4, l/2, p + n_ne + n_nw, n_sw, depth + 1);
@@ -172,12 +184,18 @@ struct vector2D {
 };
 
 // calculating the Force acting on a particle 
-vector2D ForceToQuadTree(double xPos, double yPos, QuadTree* QT){
+vector2D ForceToQuadTree(double xPos, double yPos, QuadTree* QT, int depth = 0){
   // empty leaf -> no force from it
   if(QT->num_particles <= 0){
     return vector2D(0,0);
   }
-
+  anz_depth_nodes_temp[depth]++;
+  if (depth > max_force_calc_depth) {
+    max_force_calc_depth = depth;
+  }
+  if (depth > force_depth_average_temp) {
+    force_depth_average_temp = depth;
+  }
   // determine if it is a cluster (avoid the sqrt)
   double xdiff = xPos - QT->xcenter;
   double ydiff = yPos - QT->ycenter;
@@ -207,11 +225,11 @@ vector2D ForceToQuadTree(double xPos, double yPos, QuadTree* QT){
     }
   }
   else {
-    vector2D ForceNE, ForceNW, ForceSW, ForceSE, Force;
-    ForceNE = ForceToQuadTree(xPos, yPos, QT->ne);
-    ForceNW = ForceToQuadTree(xPos, yPos, QT->nw);
-    ForceSW = ForceToQuadTree(xPos, yPos, QT->sw);
-    ForceSE = ForceToQuadTree(xPos, yPos, QT->se);
+    vector2D ForceNE, ForceNW, ForceSW, ForceSE;
+          ForceNE = ForceToQuadTree(xPos, yPos, QT->ne, depth+1);
+          ForceNW = ForceToQuadTree(xPos, yPos, QT->nw, depth+1);
+          ForceSW = ForceToQuadTree(xPos, yPos, QT->sw, depth+1);
+          ForceSE = ForceToQuadTree(xPos, yPos, QT->se, depth+1);
     return vector2D(ForceNE + ForceNW + ForceSW + ForceSE);    
   }
   return vector2D(0,0);
@@ -312,7 +330,14 @@ int main(int argc, char **argv) {
       vector2D F;
       // RK4? beacause Euler only converges in O(dt^2) and not O(dt^4) now just midpoint which is O(dt^3)
       {
+        force_depth_average_temp = 0; //TODO remove
+        anz_depth_nodes_temp.assign(15,0);
         F = ForceToQuadTree(p[i]->xpos, p[i]->ypos, QTree);
+        force_depth_average_global += force_depth_average_temp;
+        force_depth_average_global_count++;
+        for (int i = 0; i < 15; i++) {
+          anz_depth_nodes[i] += anz_depth_nodes_temp[i];
+        }
       }
       p[i]->xvel += dt * F.x;
       p[i]->yvel += dt * F.y;
@@ -362,7 +387,12 @@ int main(int argc, char **argv) {
     // print2txt(p, n);
   }
   cout << "Average Time to Loop Over Tree: " << time_average/nt <<"ns" << endl;
+  cout << "Max Depth during force calculation: " << max_force_calc_depth << endl;
+  cout << "Average max depth during force calculation: " << force_depth_average_global/force_depth_average_global_count << endl;
 
+  for (int i = 0; i < 15; i++) {
+    cout << "Depth: " << i << " average nodes: " << anz_depth_nodes[i] / force_depth_average_global_count << endl;
+  }
   // Remove particles
   for (int i = 0; i < n; i++) {
     delete p[i];
